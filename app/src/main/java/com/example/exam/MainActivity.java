@@ -9,9 +9,11 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.format.DateFormat;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -24,6 +26,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.Query;
@@ -135,7 +138,18 @@ public class MainActivity extends AppCompatActivity {
 
     private void displayAllMessages() {
         ListView listOfMessages = findViewById(R.id.list_of_messages);
-        DatabaseReference databaseReference = FirebaseDatabase.getInstance().getReference("messages");
+        DatabaseReference databaseReference = FirebaseDatabase.getInstance()
+                .getReferenceFromUrl("https://chat-90560-default-rtdb.firebaseio.com/");
+        databaseReference.child("appData/messages").get().addOnCompleteListener(task -> {
+            if (task.isSuccessful() && task.getResult() != null) {
+                for (DataSnapshot snapshot : task.getResult().getChildren()) {
+                    String textMessage = snapshot.child("textMessage").getValue(String.class);
+                    Log.d("FirebaseData", "Message: " + textMessage);
+                }
+            } else {
+                Log.e("FirebaseError", "Error: ", task.getException());
+            }
+        });
         Query query = databaseReference;
 
         FirebaseListOptions<Message> options = new FirebaseListOptions.Builder<Message>()
@@ -143,21 +157,44 @@ public class MainActivity extends AppCompatActivity {
                 .setLayout(R.layout.list_item)
                 .build();
 
+        // Адаптер сообщений
         adapter = new FirebaseListAdapter<Message>(options) {
             @Override
             protected void populateView(@NonNull View v, @NonNull Message model, int position) {
                 TextView Mess_User, Mess_time, Mess_text;
+                ImageView deleteButton; // Иконка для удаления
+
                 Mess_User = v.findViewById(R.id.message_user);
                 Mess_time = v.findViewById(R.id.message_time);
                 Mess_text = v.findViewById(R.id.message_text);
+                deleteButton = v.findViewById(R.id.delete_message); // Получаем иконку удаления
 
                 Mess_User.setText(model.getUserName());
                 Mess_text.setText(model.getTextMessage());
                 Mess_time.setText(DateFormat.format("dd-MM-yyyy HH:mm:ss", model.getMessageTime()));
+
+                // Обработчик клика по кнопке удаления
+                deleteButton.setOnClickListener(view -> {
+                    String messageId = getRef(position).getKey(); // Получаем ключ сообщения
+                    if (messageId != null) {
+                        FirebaseDatabase.getInstance().getReference("appData/messages").child(messageId).removeValue()
+                                .addOnCompleteListener(task -> {
+                                    if (task.isSuccessful()) {
+                                        // Удаляем только это сообщение из списка адаптера
+                                        getRef(position).removeValue(); // Удаляем сообщение из базы данных
+                                        // Адаптер автоматически обновит список, так как Firebase синхронизирует данные
+                                        Snackbar.make(view, "Сообщение удалено", Snackbar.LENGTH_SHORT).show();
+                                    } else {
+                                        Snackbar.make(view, "Ошибка при удалении", Snackbar.LENGTH_SHORT).show();
+                                    }
+                                });
+                    }
+                });
             }
         };
         adapter.startListening();
         listOfMessages.setAdapter(adapter);
+
     }
 
 
@@ -177,3 +214,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 }
+
+
+
